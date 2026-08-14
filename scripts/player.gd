@@ -15,11 +15,8 @@ const SKIN := Color(0.96, 0.8, 0.65)
 var main: Node2D
 var team := 0
 var idx := 0            # index in main.players
-var is_human := false   # controlled by a person (local or remote)
-var controller := -1    # multiplayer: peer id driving this player, -1 = AI/local
+var is_human := false
 var human_slot := false
-var seen_pc := 0        # multiplayer: consumed remote button-press counters
-var seen_sc := 0
 var is_gk := false
 var home_pos := Vector2.ZERO
 var base_home := Vector2.ZERO
@@ -46,17 +43,11 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
-	if main.is_net_client():
-		return  # puppet: position comes from host snapshots
-
 	if tackle_timer > 0.0:
 		tackle_timer -= delta
 		_tackle_lunge()
 	elif is_human:
-		if controller != -1 and controller != main.my_id:
-			_remote_control(delta)
-		else:
-			_human_control(delta)
+		_human_control(delta)
 	else:
 		_ai_control(delta)
 
@@ -72,22 +63,6 @@ func _human_control(delta: float) -> void:
 		Input.is_action_pressed("kick"),
 		Input.is_action_just_pressed("pass"),
 		Input.is_action_just_pressed("steal"))
-
-
-## Multiplayer: drive this player from the latest input its owner sent.
-func _remote_control(delta: float) -> void:
-	var inp = main.remote_inputs.get(controller)
-	if inp == null:
-		_apply_control(delta, Vector2.ZERO, false, false, false, false)
-		return
-	var dirv := Vector2(float(inp.get("x", 0)), float(inp.get("y", 0))).limit_length(1.0)
-	var pc := int(inp.get("pc", 0))
-	var sc := int(inp.get("sc", 0))
-	var pass_p := pc > seen_pc
-	var steal_p := sc > seen_sc
-	seen_pc = pc
-	seen_sc = sc
-	_apply_control(delta, dirv, bool(inp.get("spr", false)), bool(inp.get("k", false)), pass_p, steal_p)
 
 
 ## Shared human-control logic for local and remote players.
@@ -126,15 +101,6 @@ func _apply_control(delta: float, dir: Vector2, sprint_held: bool, kick_held: bo
 		else:
 			main.ball.kick(facing, 260.0, 20.0)
 		kick_cooldown = 0.3
-
-
-## Multiplayer client: mirror the host's view of this player's shot charge.
-func set_net_charge(v: float) -> void:
-	var was := charging
-	charging = v > 0.0
-	charge_t = v * 0.9
-	if charging or was:
-		queue_redraw()
 
 
 ## Fire a charged shot. More charge = harder and higher — overdo it (>85%)
@@ -308,9 +274,7 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, 9.0, Color(0, 0, 0, 0.25))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	# yellow ring marks the player YOU control
-	var ringed: bool = (main.net_mode == main.NET_SOLO and is_human) or idx == main.client_ring_idx
-	if ringed:
+	if is_human:
 		draw_set_transform(Vector2(0, 3), 0.0, Vector2(1, 0.5))
 		draw_arc(Vector2.ZERO, 14.0, 0, TAU, 32, Color(1, 0.9, 0.2, 0.9), 2.5)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)

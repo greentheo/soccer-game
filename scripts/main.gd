@@ -1,6 +1,5 @@
 extends Node2D
-## Soccer Game — 5v5 arcade soccer with selectable clubs, two 5-minute halves,
-## and link-join multiplayer (first to connect hosts; each person is one player).
+## Soccer Game — 5v5 arcade soccer with selectable clubs and two 5-minute halves.
 ## Side 0 is the home team and defends the left goal in the first half.
 
 const HALF_W := 520.0    # pitch half-width (x)
@@ -13,10 +12,6 @@ const TEAM_RED := 0   # left / home side
 const TEAM_BLUE := 1  # right / away side
 
 const HALF_LENGTH := 300.0  # 5 minutes per half
-
-const NET_SOLO := 0
-const NET_HOST := 1
-const NET_CLIENT := 2
 
 const TEAMS := [
 	{"name": "MAN UTD", "home": Color(0.83, 0.09, 0.12), "away": Color(0.92, 0.92, 0.92)},
@@ -36,10 +31,6 @@ const BallScene := preload("res://scripts/ball.gd")
 const PitchScene := preload("res://scripts/pitch.gd")
 const StreakerScene := preload("res://scripts/streaker.gd")
 
-# multiplayer slot order: strikers first, then forwards, then defenders.
-# Indices into `players`; goalkeepers (0 and 5) are never given to a person.
-const ASSIGN_ORDER := [4, 9, 3, 8, 1, 6, 2, 7]
-
 var playing := true
 var red_score := 0
 var blue_score := 0
@@ -56,19 +47,6 @@ var team_idx := [0, 1]  # [left/home team, right/away team] indices into TEAMS
 var sel_step := 0    # 0 = your team, 1 = opponent, 2 = home/away
 var sel_cursor := 0
 var sel_mine := 0
-
-# networking
-var net_mode := NET_SOLO
-var ws: WebSocketPeer = null
-var net_connected := false
-var my_id := 0
-var host_id := 0
-var assignments := {}    # peer id -> player index (host authoritative)
-var remote_inputs := {}  # peer id -> latest input packet (host side)
-var client_ring_idx := -1
-var snap_timer := 0.0
-var in_pc := 0  # client: cumulative pass presses
-var in_sc := 0  # client: cumulative steal presses
 
 var players: Array = []
 var ball: Node2D
@@ -120,7 +98,6 @@ func _ready() -> void:
 	ball.set_players(players)
 	_build_hud()
 	_to_team_select()
-	_net_setup()
 
 	# dev helper: `godot -- --screenshot <path>` saves a frame and quits
 	var args := OS.get_cmdline_user_args()
@@ -200,18 +177,12 @@ func _update_score() -> void:
 	score_label.text = "%s  %d - %d  %s" % [team_name(TEAM_RED), red_score, blue_score, team_name(TEAM_BLUE)]
 
 
-func is_net_client() -> bool:
-	return net_mode == NET_CLIENT and ws != null
-
-
-func _process(delta: float) -> void:
-	_net_poll(delta)
-
-	if team_select and net_mode == NET_SOLO:
+func _process(_delta: float) -> void:
+	if team_select:
 		_menu_input()
-	elif net_mode == NET_SOLO and Input.is_action_just_pressed("restart"):
+	elif Input.is_action_just_pressed("restart"):
 		_to_team_select()
-	elif playing and net_mode != NET_CLIENT and Input.is_action_just_pressed("switch_player"):
+	elif playing and Input.is_action_just_pressed("switch_player"):
 		switch_player()
 
 	var secs := int(ceilf(time_left))
@@ -324,8 +295,6 @@ func _show_message(text: String, size: int) -> void:
 # ---------- simulation (host/solo only) ----------
 
 func _physics_process(delta: float) -> void:
-	if is_net_client():
-		return
 	red_chaser = _pick_chaser(TEAM_RED)
 	blue_chaser = _pick_chaser(TEAM_BLUE)
 	if playing:
@@ -334,7 +303,7 @@ func _physics_process(delta: float) -> void:
 			time_left = 0.0
 			_end_half()
 			return
-		if net_mode == NET_SOLO and not streaker_done and randf() < delta / 800.0:
+		if not streaker_done and randf() < delta / 800.0:
 			streaker_done = true
 			_spawn_streaker()
 		_check_dead_ball()
@@ -371,9 +340,6 @@ func _end_half() -> void:
 		elif blue_score > red_score:
 			result = "%s WINS!" % team_name(TEAM_BLUE)
 		_show_message("FULL TIME\n%s\n(R for a rematch)" % result, 44)
-		if net_mode == NET_HOST:
-			await get_tree().create_timer(5.0).timeout
-			_start_net_match()
 
 
 ## Teams swap ends for the second half.
@@ -383,8 +349,8 @@ func _apply_sides() -> void:
 
 
 func _pick_chaser(team: int) -> Node2D:
-	# a human's ball: AI teammates don't contest when a person is close to it
-	if team == human_team or net_mode != NET_SOLO:
+	# your ball: AI teammates don't contest when the human is close to it
+	if team == human_team:
 		for p in players:
 			if p.team == team and p.is_human and p.position.distance_to(ball.position) < 140.0:
 				return null
@@ -434,10 +400,8 @@ func kickoff() -> void:
 		p.facing = Vector2.RIGHT if attack_goal(p.team).x > 0 else Vector2.LEFT
 
 
-## Hand control to this player (used when a teammate touches the ball). Solo only.
+## Hand control to this player (used when a teammate touches the ball).
 func transfer_control(p: Node2D) -> void:
-	if net_mode != NET_SOLO:
-		return
 	if p.team != human_team or p.is_human or p.is_gk:
 		return
 	for q in players:
@@ -448,10 +412,8 @@ func transfer_control(p: Node2D) -> void:
 	p.queue_redraw()
 
 
-## Move control to the outfield teammate nearest the ball. Solo only.
+## Move control to the outfield teammate nearest the ball.
 func switch_player() -> void:
-	if net_mode != NET_SOLO:
-		return
 	var current: Node2D = null
 	var best: Node2D = null
 	var best_d := INF
@@ -484,193 +446,3 @@ func _spawn_streaker() -> void:
 		await get_tree().create_timer(2.5).timeout
 		if message_label.text == "A STREAKER IS ON THE PITCH!":
 			message_label.visible = false
-
-
-# ---------- multiplayer ----------
-
-## Join a relay if a server was given via `?server=` (web) or `--server` (desktop).
-func _net_setup() -> void:
-	var url := ""
-	var args := OS.get_cmdline_user_args()
-	var si := args.find("--server")
-	if si != -1 and si + 1 < args.size():
-		url = args[si + 1]
-	elif OS.has_feature("web"):
-		var search := str(JavaScriptBridge.eval("window.location.search", true))
-		for part in search.trim_prefix("?").split("&"):
-			if part.begins_with("server="):
-				url = part.trim_prefix("server=").uri_decode()
-	if url == "":
-		return
-	ws = WebSocketPeer.new()
-	if ws.connect_to_url(url) != OK:
-		ws = null
-		_show_message("CONNECTION FAILED", 40)
-		return
-	net_mode = NET_CLIENT
-	team_select = false
-	playing = false
-	_show_message("CONNECTING...", 40)
-
-
-func _net_poll(delta: float) -> void:
-	if ws == null:
-		return
-	ws.poll()
-	var state := ws.get_ready_state()
-	if state == WebSocketPeer.STATE_CLOSED:
-		ws = null
-		net_connected = false
-		_show_message("DISCONNECTED\n(refresh to rejoin)", 40)
-		playing = false
-		return
-	if state != WebSocketPeer.STATE_OPEN:
-		return
-	while ws.get_available_packet_count() > 0:
-		var d = JSON.parse_string(ws.get_packet().get_string_from_utf8())
-		if d is Dictionary:
-			_net_msg(d)
-
-	# client: count button presses between sends so quick taps aren't lost
-	if net_mode == NET_CLIENT and net_connected:
-		if Input.is_action_just_pressed("pass"):
-			in_pc += 1
-		if Input.is_action_just_pressed("steal"):
-			in_sc += 1
-
-	snap_timer -= delta
-	if snap_timer <= 0.0:
-		snap_timer = 0.05
-		if net_mode == NET_HOST:
-			_send_snap()
-		elif net_mode == NET_CLIENT and net_connected:
-			_send_input()
-
-
-func _net_msg(d: Dictionary) -> void:
-	match str(d.get("t", "")):
-		"welcome":
-			my_id = int(d.id)
-			net_connected = true
-			_net_set_host(int(d.host))
-		"join":
-			if net_mode == NET_HOST:
-				var pid := int(d.id)
-				for slot in ASSIGN_ORDER:
-					if not assignments.values().has(slot):
-						assignments[pid] = slot
-						break
-				_setup_controllers()
-		"leave":
-			var pid := int(d.id)
-			remote_inputs.erase(pid)
-			if assignments.has(pid):
-				assignments.erase(pid)
-				if net_mode == NET_HOST:
-					_setup_controllers()
-			var h := int(d.get("host", host_id))
-			if h != host_id:
-				_net_set_host(h)
-		"in":
-			if net_mode == NET_HOST:
-				remote_inputs[int(d.id)] = d
-		"snap":
-			if net_mode == NET_CLIENT:
-				_apply_snap(d)
-
-
-func _net_set_host(h: int) -> void:
-	host_id = h
-	if h == my_id and net_mode != NET_HOST:
-		net_mode = NET_HOST
-		assignments = {my_id: ASSIGN_ORDER[0]}
-		client_ring_idx = ASSIGN_ORDER[0]
-		_setup_controllers()
-		_start_net_match()
-
-
-## Host: sync player nodes with the current peer->slot table.
-func _setup_controllers() -> void:
-	for p in players:
-		p.controller = -1
-		p.is_human = false
-	for pid in assignments:
-		var p = players[assignments[pid]]
-		p.controller = pid
-		p.is_human = true
-	human_team = -1  # chaser-yield logic checks all humans in multiplayer
-	for p in players:
-		p.queue_redraw()
-
-
-func _start_net_match() -> void:
-	team_select = false
-	match_over = false
-	streaker_done = true  # keep multiplayer snapshots simple
-	red_score = 0
-	blue_score = 0
-	half = 1
-	time_left = HALF_LENGTH
-	_apply_sides()
-	_update_score()
-	message_label.visible = false
-	kickoff()
-	playing = true
-
-
-func _send_input() -> void:
-	var v := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	ws.send_text(JSON.stringify({
-		"t": "in",
-		"x": snappedf(v.x, 0.01), "y": snappedf(v.y, 0.01),
-		"spr": Input.is_action_pressed("sprint"),
-		"k": Input.is_action_pressed("kick"),
-		"pc": in_pc, "sc": in_sc,
-	}))
-
-
-func _send_snap() -> void:
-	var ps := []
-	var cs := []
-	for p in players:
-		ps.append([snappedf(p.position.x, 0.1), snappedf(p.position.y, 0.1)])
-		cs.append(snappedf(minf(p.charge_t / 0.9, 1.0), 0.01) if p.charging else 0.0)
-	ws.send_text(JSON.stringify({
-		"t": "snap",
-		"p": ps, "c": cs,
-		"b": [snappedf(ball.position.x, 0.1), snappedf(ball.position.y, 0.1), snappedf(ball.z, 0.1)],
-		"s": [red_score, blue_score],
-		"tl": snappedf(time_left, 0.1), "h": half,
-		"m": message_label.text if message_label.visible else "",
-		"map": assignments,
-	}))
-
-
-func _apply_snap(d: Dictionary) -> void:
-	for i in players.size():
-		players[i].position = Vector2(float(d.p[i][0]), float(d.p[i][1]))
-		players[i].set_net_charge(float(d.c[i]))
-	ball.position = Vector2(float(d.b[0]), float(d.b[1]))
-	ball.z = float(d.b[2])
-	ball.queue_redraw()
-	red_score = int(d.s[0])
-	blue_score = int(d.s[1])
-	_update_score()
-	time_left = float(d.tl)
-	half = int(d.h)
-	var m := str(d.get("m", ""))
-	if m != "":
-		_show_message(m, 44)
-	else:
-		message_label.visible = false
-
-	var ring := -1
-	for k in d.map:
-		if int(k) == my_id:
-			ring = int(d.map[k])
-	if ring != client_ring_idx:
-		client_ring_idx = ring
-		for p in players:
-			p.queue_redraw()
-		if ring == -1:
-			_show_message("MATCH FULL — SPECTATING", 30)
