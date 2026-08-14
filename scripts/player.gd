@@ -26,6 +26,13 @@ var tackle_timer := 0.0   # active lunge time remaining
 var steal_cooldown := 0.0
 var charging := false     # holding Space to power up a shot
 var charge_t := 0.0
+var celebrate_t := 0.0    # post-goal celebration time remaining
+
+
+func _process(delta: float) -> void:
+	if celebrate_t > 0.0:
+		celebrate_t -= delta
+		queue_redraw()
 
 
 func _ready() -> void:
@@ -285,13 +292,38 @@ func _draw() -> void:
 		var col := Color(0.2, 0.9, 0.2).lerp(Color(1, 0.15, 0.1), c)
 		draw_rect(Rect2(-12, -36, 24.0 * c, 3), col)
 
-	var shirt: Color = main.kit_color(team)
-	var accent: Color = main.kit_accent(team)
+	var kit: Dictionary = main.kit(team)
+	var body: Color = kit.body
+	var trim: Color = kit.trim
+	var trim2: Color = kit.trim2
 	if is_gk:
-		shirt = shirt.darkened(0.45)
-		accent = accent.darkened(0.45)
-	draw_circle(Vector2(0, -9), 9.0, shirt)
-	draw_arc(Vector2(0, -9), 9.0, 0, TAU, 24, accent, 2.0)
-	draw_rect(Rect2(-6.0, -11.0, 12.0, 3.0), accent)
+		body = body.darkened(0.45)
+		trim = trim.darkened(0.45)
+		trim2 = trim2.darkened(0.45)
+
+	# goal celebration: hop up and down with arms in the air
+	if celebrate_t > 0.0:
+		var hop := absf(sin(celebrate_t * 9.0)) * 6.0
+		draw_set_transform(Vector2(0, -hop), 0.0, Vector2.ONE)
+		draw_circle(Vector2(-9, -22), 3.5, SKIN)
+		draw_circle(Vector2(9, -22), 3.5, SKIN)
+
+	draw_circle(Vector2(0, -9), 9.0, body)
+	if kit.body2 != null:
+		# two-tone club: right half of the shirt in the second color
+		var half: Color = kit.body2
+		if is_gk:
+			half = half.darkened(0.45)
+		var pts := PackedVector2Array()
+		pts.append(Vector2(0, -9))
+		for i in 13:
+			var a := -PI / 2.0 + PI * i / 12.0
+			pts.append(Vector2(0, -9) + Vector2(cos(a), sin(a)) * 9.0)
+		draw_colored_polygon(pts, half)
+	draw_arc(Vector2(0, -9), 9.0, 0, TAU, 24, trim, 2.0)
+	if kit.body2 == null:
+		draw_rect(Rect2(-6.0, -11.0, 6.0, 3.0), trim)
+		draw_rect(Rect2(0.0, -11.0, 6.0, 3.0), trim2)
 	draw_circle(Vector2(0, -20), 5.5, SKIN)
+	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 

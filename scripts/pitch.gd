@@ -3,6 +3,20 @@ extends Node2D
 ## Y-sorted players and ball.
 
 var main: Node2D
+var cheer_t := 0.0   # time left of the goal celebration
+var _anim_t := 0.0
+
+
+## The crowd leaps to its feet for a few seconds.
+func cheer() -> void:
+	cheer_t = 2.5
+
+
+func _process(delta: float) -> void:
+	if cheer_t > 0.0:
+		cheer_t -= delta
+		_anim_t += delta
+		queue_redraw()
 
 
 func _draw() -> void:
@@ -64,14 +78,18 @@ func _draw_crowd() -> void:
 		Rect2(-700, -326, 110, 652),  # left, behind the goal
 		Rect2(590, -326, 110, 652),   # right
 	]
+	var bounce := clampf(cheer_t, 0.0, 1.0) * 5.0
 	for stand: Rect2 in stands:
 		var y := stand.position.y + 5.0
 		while y < stand.end.y:
 			var x := stand.position.x + 5.0
 			while x < stand.end.x:
+				var phase := rng.randf() * TAU  # always drawn so seating stays fixed
 				if rng.randf() > 0.18:  # a few empty seats
 					var c: Color = palette[rng.randi() % palette.size()]
 					var p := Vector2(x + rng.randf_range(-2, 2), y + rng.randf_range(-2, 2))
+					if bounce > 0.0:
+						p.y -= absf(sin(_anim_t * 9.0 + phase)) * bounce
 					draw_circle(p, 2.4, c.darkened(rng.randf_range(0.0, 0.25)))
 				x += 11.0
 			y += 10.0

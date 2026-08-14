@@ -14,16 +14,16 @@ const TEAM_BLUE := 1  # right / away side
 const HALF_LENGTH := 300.0  # 5 minutes per half
 
 const TEAMS := [
-	{"name": "MAN UTD", "color": Color(0.83, 0.09, 0.12)},
-	{"name": "MAN CITY", "color": Color(0.42, 0.72, 0.92)},
-	{"name": "BARCELONA", "color": Color(0.55, 0.1, 0.3)},
-	{"name": "REAL MADRID", "color": Color(0.7, 0.72, 0.78)},
-	{"name": "PSG", "color": Color(0.1, 0.12, 0.35)},
-	{"name": "LYON", "color": Color(0.25, 0.35, 0.7)},
-	{"name": "COLORADO RAPIDS", "color": Color(0.55, 0.15, 0.25)},
-	{"name": "INTER MIAMI", "color": Color(0.95, 0.55, 0.75)},
-	{"name": "INTER MILAN", "color": Color(0.15, 0.25, 0.6)},
-	{"name": "AC MILAN", "color": Color(0.55, 0.08, 0.1)},
+	{"name": "MAN UTD", "color": Color(0.85, 0.09, 0.12)},
+	{"name": "MAN CITY", "color": Color(0.6, 0.82, 0.95)},
+	{"name": "BARCELONA", "color": Color(0.7, 0.1, 0.2), "color2": Color(0.1, 0.2, 0.55)},
+	{"name": "REAL MADRID", "color": Color(0.0, 0.65, 0.65)},
+	{"name": "PSG", "color": Color(0.08, 0.12, 0.38)},
+	{"name": "LYON", "color": Color(0.2, 0.35, 0.8)},
+	{"name": "COLORADO RAPIDS", "color": Color(0.75, 0.12, 0.15), "color2": Color(0.6, 0.82, 0.95)},
+	{"name": "INTER MIAMI", "color": Color(0.95, 0.6, 0.78)},
+	{"name": "INTER MILAN", "color": Color(0.15, 0.25, 0.75)},
+	{"name": "AC MILAN", "color": Color(0.75, 0.08, 0.1), "color2": Color(0.1, 0.1, 0.12)},
 ]
 
 const PlayerScene := preload("res://scripts/player.gd")
@@ -57,6 +57,8 @@ var blue_chaser: Node2D
 var score_label: Label
 var time_label: Label
 var message_label: Label
+var pitch_node: Node2D
+var cheer_sfx: AudioStreamPlayer
 
 # home formation for the left team; the right team is mirrored in x.
 # [position, is_goalkeeper, is_human_slot]
@@ -78,6 +80,12 @@ func _ready() -> void:
 	pitch.main = self
 	pitch.z_index = -1
 	add_child(pitch)
+	pitch_node = pitch
+
+	cheer_sfx = AudioStreamPlayer.new()
+	cheer_sfx.stream = preload("res://assets/crowd_cheer.wav")
+	cheer_sfx.volume_db = -4.0
+	add_child(cheer_sfx)
 
 	var boards = BoardsScene.new()
 	boards.z_index = -1
@@ -173,15 +181,17 @@ func team_name(side: int) -> String:
 	return TEAMS[team_idx[side]].name
 
 
-## The kit a side wears: home team in its main color, away team in white.
-func kit_color(side: int) -> Color:
-	return TEAMS[team_idx[side]].color if side == TEAM_RED else Color(0.95, 0.95, 0.95)
-
-
-## Kit trim: darker shade at home, the club's main color on the white away kit.
-func kit_accent(side: int) -> Color:
-	var c: Color = TEAMS[team_idx[side]].color
-	return c.darkened(0.35) if side == TEAM_RED else c
+## The kit a side wears. Home: club colors (two-tone clubs get half/half
+## shirts). Away: white with the club's colors as trim.
+func kit(side: int) -> Dictionary:
+	var t: Dictionary = TEAMS[team_idx[side]]
+	var c: Color = t.color
+	var c2 = t.get("color2")
+	if side == TEAM_RED:
+		var trim: Color = c.darkened(0.35) if c2 == null else c.lerp(c2, 0.5).darkened(0.4)
+		return {"body": c, "body2": c2, "trim": trim, "trim2": trim}
+	return {"body": Color(0.95, 0.95, 0.95), "body2": null,
+		"trim": c, "trim2": c2 if c2 != null else c}
 
 
 func _update_score() -> void:
@@ -396,6 +406,11 @@ func _check_goal() -> void:
 			blue_score += 1
 		_update_score()
 		playing = false
+		pitch_node.cheer()
+		cheer_sfx.play()
+		for p in players:
+			if p.team == scorer:
+				p.celebrate_t = 2.0
 		_show_message("GOAL!  %s" % team_name(scorer), 56)
 		await get_tree().create_timer(2.0).timeout
 		message_label.visible = false
