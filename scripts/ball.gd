@@ -41,6 +41,10 @@ func kick(dir: Vector2, power: float, lift: float, spin_amt := 0.0) -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if main.is_net_client():
+		queue_redraw()  # position/height come from host snapshots
+		return
+
 	no_touch = maxf(0.0, no_touch - delta)
 
 	# sticky dribble: ball rides at the human's feet until kicked or knocked loose

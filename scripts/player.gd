@@ -14,8 +14,12 @@ const SKIN := Color(0.96, 0.8, 0.65)
 
 var main: Node2D
 var team := 0
-var is_human := false
+var idx := 0            # index in main.players
+var is_human := false   # controlled by a person (local or remote)
+var controller := -1    # multiplayer: peer id driving this player, -1 = AI/local
 var human_slot := false
+var seen_pc := 0        # multiplayer: consumed remote button-press counters
+var seen_sc := 0
 var is_gk := false
 var home_pos := Vector2.ZERO
 var base_home := Vector2.ZERO
@@ -42,11 +46,17 @@ func _physics_process(delta: float) -> void:
 		velocity = Vector2.ZERO
 		return
 
+	if main.is_net_client():
+		return  # puppet: position comes from host snapshots
+
 	if tackle_timer > 0.0:
 		tackle_timer -= delta
 		_tackle_lunge()
 	elif is_human:
-		_human_control(delta)
+		if controller != -1 and controller != main.my_id:
+			_remote_control(delta)
+		else:
+			_human_control(delta)
 	else:
 		_ai_control(delta)
 
@@ -56,24 +66,49 @@ func _physics_process(delta: float) -> void:
 
 
 func _human_control(delta: float) -> void:
-	var input := Input.get_vector("move_left", "move_right", "move_up", "move_down")
-	var speed := HUMAN_SPEED * (SPRINT_MULT if Input.is_action_pressed("sprint") else 1.0)
-	velocity = velocity.move_toward(input * speed, HUMAN_ACCEL * delta)
-	if input != Vector2.ZERO:
-		facing = input.normalized()
+	_apply_control(delta,
+		Input.get_vector("move_left", "move_right", "move_up", "move_down"),
+		Input.is_action_pressed("sprint"),
+		Input.is_action_pressed("kick"),
+		Input.is_action_just_pressed("pass"),
+		Input.is_action_just_pressed("steal"))
 
-	# shot charging: hold Space to wind up, release to shoot
+
+## Multiplayer: drive this player from the latest input its owner sent.
+func _remote_control(delta: float) -> void:
+	var inp = main.remote_inputs.get(controller)
+	if inp == null:
+		_apply_control(delta, Vector2.ZERO, false, false, false, false)
+		return
+	var dirv := Vector2(float(inp.get("x", 0)), float(inp.get("y", 0))).limit_length(1.0)
+	var pc := int(inp.get("pc", 0))
+	var sc := int(inp.get("sc", 0))
+	var pass_p := pc > seen_pc
+	var steal_p := sc > seen_sc
+	seen_pc = pc
+	seen_sc = sc
+	_apply_control(delta, dirv, bool(inp.get("spr", false)), bool(inp.get("k", false)), pass_p, steal_p)
+
+
+## Shared human-control logic for local and remote players.
+func _apply_control(delta: float, dir: Vector2, sprint_held: bool, kick_held: bool, pass_p: bool, steal_p: bool) -> void:
+	var speed := HUMAN_SPEED * (SPRINT_MULT if sprint_held else 1.0)
+	velocity = velocity.move_toward(dir * speed, HUMAN_ACCEL * delta)
+	if dir != Vector2.ZERO:
+		facing = dir.normalized()
+
+	# shot charging: hold the kick button to wind up, release to shoot
 	if charging:
 		charge_t += delta
 		queue_redraw()
-		if not Input.is_action_pressed("kick"):
+		if not kick_held:
 			charging = false
 			queue_redraw()
 			if _ball_in_range(40.0):
 				_release_shot(minf(charge_t / 0.9, 1.0))
 		return
 
-	if Input.is_action_just_pressed("steal") and steal_cooldown <= 0.0:
+	if steal_p and steal_cooldown <= 0.0:
 		tackle_timer = 0.18
 		steal_cooldown = 0.8
 		_tackle_lunge()
@@ -81,16 +116,25 @@ func _human_control(delta: float) -> void:
 
 	if kick_cooldown > 0.0 or not _ball_in_range(40.0):
 		return
-	if Input.is_action_just_pressed("kick"):
+	if kick_held:
 		charging = true
 		charge_t = 0.0
-	elif Input.is_action_just_pressed("pass"):
+	elif pass_p:
 		var mate := _best_pass_mate()
 		if mate:
 			_pass_to(mate)
 		else:
 			main.ball.kick(facing, 260.0, 20.0)
 		kick_cooldown = 0.3
+
+
+## Multiplayer client: mirror the host's view of this player's shot charge.
+func set_net_charge(v: float) -> void:
+	var was := charging
+	charging = v > 0.0
+	charge_t = v * 0.9
+	if charging or was:
+		queue_redraw()
 
 
 ## Fire a charged shot. More charge = harder and higher — overdo it (>85%)
@@ -264,7 +308,9 @@ func _draw() -> void:
 	draw_circle(Vector2.ZERO, 9.0, Color(0, 0, 0, 0.25))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
-	if is_human:
+	# yellow ring marks the player YOU control
+	var ringed: bool = (main.net_mode == main.NET_SOLO and is_human) or idx == main.client_ring_idx
+	if ringed:
 		draw_set_transform(Vector2(0, 3), 0.0, Vector2(1, 0.5))
 		draw_arc(Vector2.ZERO, 14.0, 0, TAU, 32, Color(1, 0.9, 0.2, 0.9), 2.5)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
@@ -284,4 +330,4 @@ func _draw() -> void:
 
 
 func _team_color() -> Color:
-	return Color(0.83, 0.09, 0.12) if team == 0 else Color(0.42, 0.72, 0.92)
+	return main.kit_color(team)
