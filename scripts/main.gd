@@ -29,6 +29,7 @@ const TEAMS := [
 const PlayerScene := preload("res://scripts/player.gd")
 const BallScene := preload("res://scripts/ball.gd")
 const PitchScene := preload("res://scripts/pitch.gd")
+const BoardsScene := preload("res://scripts/boards.gd")
 const StreakerScene := preload("res://scripts/streaker.gd")
 
 var playing := true
@@ -77,6 +78,10 @@ func _ready() -> void:
 	pitch.main = self
 	pitch.z_index = -1
 	add_child(pitch)
+
+	var boards = BoardsScene.new()
+	boards.z_index = -1
+	add_child(boards)
 
 	ball = BallScene.new()
 	ball.main = self

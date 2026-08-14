@@ -11,8 +11,10 @@ func _draw() -> void:
 	var goal_half: float = main.GOAL_HALF
 	var goal_depth: float = main.GOAL_DEPTH
 
-	# surrounding grass
-	draw_rect(Rect2(-700, -420, 1400, 840), Color(0.13, 0.35, 0.16))
+	# stadium bowl (stands background)
+	draw_rect(Rect2(-700, -420, 1400, 840), Color(0.09, 0.09, 0.12))
+	# grass apron around the pitch, out to the perimeter boards
+	draw_rect(Rect2(-572, -314, 1144, 628), Color(0.13, 0.35, 0.16))
 	# mowing stripes
 	var stripe_w := half_w * 2.0 / 10.0
 	for i in range(10):
@@ -43,3 +45,33 @@ func _draw() -> void:
 		# posts
 		draw_circle(Vector2(bx, -goal_half), 4.0, Color.WHITE)
 		draw_circle(Vector2(bx, goal_half), 4.0, Color.WHITE)
+
+	_draw_crowd()
+
+
+## Thousands of seeded-random fans filling the stands on all four sides.
+func _draw_crowd() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 1337
+	var palette := [
+		Color(0.85, 0.85, 0.9), Color(0.6, 0.6, 0.65), Color(0.25, 0.25, 0.3),
+		Color(0.9, 0.3, 0.3), Color(0.3, 0.5, 0.9), Color(0.95, 0.85, 0.3),
+		Color(0.3, 0.8, 0.5), Color(0.96, 0.8, 0.65), Color(0.9, 0.55, 0.75),
+	]
+	var stands := [
+		Rect2(-700, -420, 1400, 88),  # top
+		Rect2(-700, 332, 1400, 88),   # bottom
+		Rect2(-700, -326, 110, 652),  # left, behind the goal
+		Rect2(590, -326, 110, 652),   # right
+	]
+	for stand: Rect2 in stands:
+		var y := stand.position.y + 5.0
+		while y < stand.end.y:
+			var x := stand.position.x + 5.0
+			while x < stand.end.x:
+				if rng.randf() > 0.18:  # a few empty seats
+					var c: Color = palette[rng.randi() % palette.size()]
+					var p := Vector2(x + rng.randf_range(-2, 2), y + rng.randf_range(-2, 2))
+					draw_circle(p, 2.4, c.darkened(rng.randf_range(0.0, 0.25)))
+				x += 11.0
+			y += 10.0
