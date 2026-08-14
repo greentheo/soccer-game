@@ -14,16 +14,16 @@ const TEAM_BLUE := 1  # right / away side
 const HALF_LENGTH := 300.0  # 5 minutes per half
 
 const TEAMS := [
-	{"name": "MAN UTD", "home": Color(0.83, 0.09, 0.12), "away": Color(0.92, 0.92, 0.92)},
-	{"name": "MAN CITY", "home": Color(0.42, 0.72, 0.92), "away": Color(0.15, 0.17, 0.35)},
-	{"name": "BARCELONA", "home": Color(0.55, 0.1, 0.3), "away": Color(0.95, 0.85, 0.2)},
-	{"name": "REAL MADRID", "home": Color(0.95, 0.95, 0.95), "away": Color(0.12, 0.14, 0.4)},
-	{"name": "PSG", "home": Color(0.1, 0.12, 0.35), "away": Color(0.93, 0.93, 0.93)},
-	{"name": "LYON", "home": Color(0.9, 0.9, 0.95), "away": Color(0.15, 0.2, 0.5)},
-	{"name": "COLORADO RAPIDS", "home": Color(0.55, 0.15, 0.25), "away": Color(0.6, 0.8, 0.95)},
-	{"name": "INTER MIAMI", "home": Color(0.95, 0.55, 0.75), "away": Color(0.15, 0.15, 0.15)},
-	{"name": "INTER MILAN", "home": Color(0.15, 0.25, 0.6), "away": Color(0.9, 0.9, 0.9)},
-	{"name": "AC MILAN", "home": Color(0.55, 0.08, 0.1), "away": Color(0.92, 0.92, 0.92)},
+	{"name": "MAN UTD", "color": Color(0.83, 0.09, 0.12)},
+	{"name": "MAN CITY", "color": Color(0.42, 0.72, 0.92)},
+	{"name": "BARCELONA", "color": Color(0.55, 0.1, 0.3)},
+	{"name": "REAL MADRID", "color": Color(0.7, 0.72, 0.78)},
+	{"name": "PSG", "color": Color(0.1, 0.12, 0.35)},
+	{"name": "LYON", "color": Color(0.25, 0.35, 0.7)},
+	{"name": "COLORADO RAPIDS", "color": Color(0.55, 0.15, 0.25)},
+	{"name": "INTER MIAMI", "color": Color(0.95, 0.55, 0.75)},
+	{"name": "INTER MILAN", "color": Color(0.15, 0.25, 0.6)},
+	{"name": "AC MILAN", "color": Color(0.55, 0.08, 0.1)},
 ]
 
 const PlayerScene := preload("res://scripts/player.gd")
@@ -168,9 +168,15 @@ func team_name(side: int) -> String:
 	return TEAMS[team_idx[side]].name
 
 
-## The kit a side wears: home team in home colors, away team in away colors.
+## The kit a side wears: home team in its main color, away team in white.
 func kit_color(side: int) -> Color:
-	return TEAMS[team_idx[side]]["home" if side == TEAM_RED else "away"]
+	return TEAMS[team_idx[side]].color if side == TEAM_RED else Color(0.95, 0.95, 0.95)
+
+
+## Kit trim: darker shade at home, the club's main color on the white away kit.
+func kit_accent(side: int) -> Color:
+	var c: Color = TEAMS[team_idx[side]].color
+	return c.darkened(0.35) if side == TEAM_RED else c
 
 
 func _update_score() -> void:

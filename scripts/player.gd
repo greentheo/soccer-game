@@ -285,13 +285,13 @@ func _draw() -> void:
 		var col := Color(0.2, 0.9, 0.2).lerp(Color(1, 0.15, 0.1), c)
 		draw_rect(Rect2(-12, -36, 24.0 * c, 3), col)
 
-	var shirt := _team_color()
+	var shirt: Color = main.kit_color(team)
+	var accent: Color = main.kit_accent(team)
 	if is_gk:
 		shirt = shirt.darkened(0.45)
+		accent = accent.darkened(0.45)
 	draw_circle(Vector2(0, -9), 9.0, shirt)
-	draw_arc(Vector2(0, -9), 9.0, 0, TAU, 24, shirt.darkened(0.4), 1.5)
+	draw_arc(Vector2(0, -9), 9.0, 0, TAU, 24, accent, 2.0)
+	draw_rect(Rect2(-6.0, -11.0, 12.0, 3.0), accent)
 	draw_circle(Vector2(0, -20), 5.5, SKIN)
 
-
-func _team_color() -> Color:
-	return main.kit_color(team)
