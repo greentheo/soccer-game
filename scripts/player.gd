@@ -102,7 +102,7 @@ func _release_shot(charge: float) -> void:
 	if charge > 0.85:
 		lift += 220.0  # leaned back too far — this one's going over
 	var dir := facing.rotated(clampf(randfn(0.0, 0.06), -0.22, 0.22))
-	main.ball.kick(dir, power, lift, clampf(randfn(0.0, 1.1), -1.8, 1.8))
+	main.ball.kick(dir, power, lift, clampf(randfn(0.0, 1.6), -2.6, 2.6))
 	kick_cooldown = 0.3
 
 
@@ -192,7 +192,7 @@ func _ai_try_kick() -> void:
 		var ai_lift := randf_range(60.0, 140.0)
 		if randf() < 0.12:
 			ai_lift = randf_range(360.0, 430.0)
-		ball.kick(position.direction_to(aim), 430.0, ai_lift, randf_range(-1.0, 1.0))
+		ball.kick(position.direction_to(aim), 430.0, ai_lift, randf_range(-1.6, 1.6))
 	else:
 		var mate := _pass_target(goal)
 		if mate and randf() < 0.85:

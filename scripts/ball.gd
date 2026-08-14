@@ -105,7 +105,7 @@ func _physics_process(delta: float) -> void:
 	# curl: spin bends the flight path while the ball is moving fast
 	if absf(spin) > 0.01 and vel.length() > 120.0:
 		vel = vel.rotated(spin * delta)
-	spin = move_toward(spin, 0.0, 1.0 * delta)
+	spin = move_toward(spin, 0.0, 0.6 * delta)
 
 	position += vel * delta
 	_bounce_off_bounds()
