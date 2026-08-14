@@ -132,7 +132,7 @@ func _build_hud() -> void:
 	hud.add_child(message_label)
 
 	var hint := Label.new()
-	hint.text = "Arrows: move    Space: shoot    A: pass    E: steal    S: switch player    Shift: sprint    R: menu"
+	hint.text = "Arrows: move    Space: shoot (hold for power)    A: pass    E: steal    S: switch player    Shift: sprint    R: menu"
 	hint.add_theme_font_size_override("font_size", 14)
 	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.7))
 	hint.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -256,7 +256,19 @@ func _physics_process(delta: float) -> void:
 		if not streaker_done and randf() < delta / 800.0:
 			streaker_done = true
 			_spawn_streaker()
+		_check_dead_ball()
 		_check_goal()
+
+
+## A ball that sailed over the goal and died out of play becomes a goal kick.
+func _check_dead_ball() -> void:
+	if absf(ball.position.x) > HALF_W + 6.0 and ball.z <= 0.5 and ball.vel.length() < 50.0:
+		var attacker := TEAM_RED if attack_goal(TEAM_RED).x * ball.position.x > 0 else TEAM_BLUE
+		var defender := TEAM_BLUE if attacker == TEAM_RED else TEAM_RED
+		for p in players:
+			if p.team == defender and p.is_gk:
+				ball.reset(p.position + Vector2(signf(-ball.position.x) * 34.0, 0))
+				return
 
 
 func _end_half() -> void:

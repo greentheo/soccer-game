@@ -23,6 +23,8 @@ var facing := Vector2.RIGHT
 var kick_cooldown := 0.0
 var tackle_timer := 0.0   # active lunge time remaining
 var steal_cooldown := 0.0
+var charging := false     # holding Space to power up a shot
+var charge_t := 0.0
 
 
 func _ready() -> void:
@@ -60,6 +62,17 @@ func _human_control(delta: float) -> void:
 	if input != Vector2.ZERO:
 		facing = input.normalized()
 
+	# shot charging: hold Space to wind up, release to shoot
+	if charging:
+		charge_t += delta
+		queue_redraw()
+		if not Input.is_action_pressed("kick"):
+			charging = false
+			queue_redraw()
+			if _ball_in_range(40.0):
+				_release_shot(minf(charge_t / 0.9, 1.0))
+		return
+
 	if Input.is_action_just_pressed("steal") and steal_cooldown <= 0.0:
 		tackle_timer = 0.18
 		steal_cooldown = 0.8
@@ -69,8 +82,8 @@ func _human_control(delta: float) -> void:
 	if kick_cooldown > 0.0 or not _ball_in_range(40.0):
 		return
 	if Input.is_action_just_pressed("kick"):
-		main.ball.kick(facing, 400.0, 130.0)
-		kick_cooldown = 0.3
+		charging = true
+		charge_t = 0.0
 	elif Input.is_action_just_pressed("pass"):
 		var mate := _best_pass_mate()
 		if mate:
@@ -78,6 +91,19 @@ func _human_control(delta: float) -> void:
 		else:
 			main.ball.kick(facing, 260.0, 20.0)
 		kick_cooldown = 0.3
+
+
+## Fire a charged shot. More charge = harder and higher — overdo it (>85%)
+## and the ball sails over the bar. Slight aim scatter plus random curl means
+## shots bend toward corners instead of arrowing straight at the keeper.
+func _release_shot(charge: float) -> void:
+	var power := 280.0 + 300.0 * charge
+	var lift := 40.0 + 200.0 * charge
+	if charge > 0.85:
+		lift += 220.0  # leaned back too far — this one's going over
+	var dir := facing.rotated(clampf(randfn(0.0, 0.06), -0.22, 0.22))
+	main.ball.kick(dir, power, lift, clampf(randfn(0.0, 1.1), -1.8, 1.8))
+	kick_cooldown = 0.3
 
 
 ## Quick dash toward facing; pokes the ball loose if we reach it.
@@ -161,9 +187,12 @@ func _ai_try_kick() -> void:
 		return
 
 	if position.distance_to(goal) < 260.0 and randf() < 0.75:
-		# shoot at a random spot inside the goal mouth
+		# shoot at a corner with some curl; occasionally blaze it over
 		var aim := Vector2(goal.x, randf_range(-main.GOAL_HALF + 20.0, main.GOAL_HALF - 20.0))
-		ball.kick(position.direction_to(aim), 430.0, randf_range(60.0, 140.0))
+		var ai_lift := randf_range(60.0, 140.0)
+		if randf() < 0.12:
+			ai_lift = randf_range(360.0, 430.0)
+		ball.kick(position.direction_to(aim), 430.0, ai_lift, randf_range(-1.0, 1.0))
 	else:
 		var mate := _pass_target(goal)
 		if mate and randf() < 0.85:
@@ -239,6 +268,12 @@ func _draw() -> void:
 		draw_set_transform(Vector2(0, 3), 0.0, Vector2(1, 0.5))
 		draw_arc(Vector2.ZERO, 14.0, 0, TAU, 32, Color(1, 0.9, 0.2, 0.9), 2.5)
 		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	if charging:
+		var c := minf(charge_t / 0.9, 1.0)
+		draw_rect(Rect2(-13, -37, 26, 5), Color(0, 0, 0, 0.55))
+		var col := Color(0.2, 0.9, 0.2).lerp(Color(1, 0.15, 0.1), c)
+		draw_rect(Rect2(-12, -36, 24.0 * c, 3), col)
 
 	var shirt := _team_color()
 	if is_gk:

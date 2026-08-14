@@ -11,6 +11,7 @@ var vel := Vector2.ZERO
 var z := 0.0       # height above the ground
 var vz := 0.0
 var no_touch := 0.0 # brief window after a kick where dribble contact is ignored
+var spin := 0.0     # curls the ball's flight path (radians/sec)
 var holder: Node2D = null # human player carrying the ball (sticky dribble)
 var shield_grace := 0.0   # steal protection right after winning the ball
 
@@ -27,13 +28,15 @@ func reset(pos: Vector2) -> void:
 	z = 0.0
 	vz = 0.0
 	no_touch = 0.0
+	spin = 0.0
 	holder = null
 
 
-func kick(dir: Vector2, power: float, lift: float) -> void:
+func kick(dir: Vector2, power: float, lift: float, spin_amt := 0.0) -> void:
 	holder = null
 	vel = dir.normalized() * power
 	vz = lift
+	spin = spin_amt
 	no_touch = 0.3
 
 
@@ -99,6 +102,11 @@ func _physics_process(delta: float) -> void:
 			else:
 				vel = vel * 0.2 + toucher.velocity + (position - toucher.position).normalized() * 60.0
 
+	# curl: spin bends the flight path while the ball is moving fast
+	if absf(spin) > 0.01 and vel.length() > 120.0:
+		vel = vel.rotated(spin * delta)
+	spin = move_toward(spin, 0.0, 1.0 * delta)
+
 	position += vel * delta
 	_bounce_off_bounds()
 	queue_redraw()
@@ -116,6 +124,12 @@ func _bounce_off_bounds() -> void:
 			if absf(position.x) > back:
 				position.x = signf(position.x) * back
 				vel *= 0.1
+		elif z > 55.0:
+			# sailing over the goal/wall: fly on, bounce off the boards behind
+			if absf(position.x) > 690.0:
+				position.x = signf(position.x) * 690.0
+				vel.x = -vel.x * 0.4
+				vel.y *= 0.6
 		else:
 			position.x = signf(position.x) * hw
 			vel.x = -vel.x * 0.7
