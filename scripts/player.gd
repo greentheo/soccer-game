@@ -18,6 +18,7 @@ var idx := 0            # index in main.players
 var is_human := false
 var human_slot := false
 var is_gk := false
+var is_def := false
 var home_pos := Vector2.ZERO
 var base_home := Vector2.ZERO
 var facing := Vector2.RIGHT
@@ -115,9 +116,8 @@ func _apply_control(delta: float, dir: Vector2, sprint_held: bool, kick_held: bo
 		kick_cooldown = 0.3
 
 
-## Fire a charged shot: dead straight into a goal corner (top corner if you
-## face up, bottom if down, else random). The keeper saves 25% of on-target
-## shots; overcharging (>85%) still skies it over the bar.
+## Fire a charged shot: dead straight into the corner away from the keeper.
+## The keeper saves 60% of on-target shots; overcharging (>85%) skies it.
 func _release_shot(charge: float) -> void:
 	var power := 280.0 + 300.0 * charge
 	var lift := 40.0 + 200.0 * charge
@@ -126,7 +126,7 @@ func _release_shot(charge: float) -> void:
 	var aim: Vector2 = main.attack_goal(team) + Vector2(0, _far_corner_side() * (main.GOAL_HALF - 14.0))
 	main.ball.kick(position.direction_to(aim), power, lift, 0.0)
 	if charge <= 0.85:
-		main.ball.mark_shot(randf() < 0.4)
+		main.ball.mark_shot(randf() < 0.6)
 	kick_cooldown = 0.3
 
 
@@ -193,8 +193,22 @@ func _ai_control(delta: float) -> void:
 		target = ball.position
 		chasing = true
 	else:
-		# drift with play, stay on the pitch
-		target = home_pos + Vector2(ball.position.x * 0.3, ball.position.y * 0.2)
+		var attack_dir: float = signf(main.attack_goal(team).x)
+		if main.possession == team:
+			# attacking phase: push upfield in support of the ball
+			var push := 90.0 if is_def else 170.0
+			target = home_pos + Vector2(ball.position.x * 0.35 + attack_dir * push, ball.position.y * 0.25)
+		elif main.possession != -1:
+			# defending phase: drop deep; defenders man-mark goal-side
+			var threat := _nearest_opponent() if is_def else null
+			if threat:
+				var own_goal: Vector2 = -main.attack_goal(team)
+				target = threat.position + threat.position.direction_to(own_goal) * 26.0
+			else:
+				target = home_pos + Vector2(ball.position.x * 0.3 - attack_dir * 60.0, ball.position.y * 0.35)
+		else:
+			# neutral: drift with play
+			target = home_pos + Vector2(ball.position.x * 0.3, ball.position.y * 0.2)
 		target.x = clampf(target.x, -main.HALF_W + 20.0, main.HALF_W - 20.0)
 		target.y = clampf(target.y, -main.HALF_H + 20.0, main.HALF_H - 20.0)
 
@@ -204,6 +218,8 @@ func _ai_control(delta: float) -> void:
 	var desired := Vector2.ZERO
 	if position.distance_to(target) > arrive_dist:
 		var speed := AI_CHASE_SPEED if chasing else AI_HOLD_SPEED
+		if chasing and main.possession != team:
+			speed += 15.0  # press harder when the other side has it
 		desired = position.direction_to(target) * speed
 	velocity = velocity.move_toward(desired, AI_ACCEL * delta)
 	if velocity.length() > 20.0:
@@ -219,8 +235,8 @@ func _ai_try_kick() -> void:
 	if is_gk:
 		# save, then distribute: prefer an open teammate in our own half,
 		# otherwise boot it long and high over everyone's heads.
-		# Shots on goal are pre-rolled: 25% the keeper reads it (long reach),
-		# 75% the corner placement sells him (tiny reach, it flies past).
+		# Shots on goal are pre-rolled: 60% the keeper reads it (long reach),
+		# 40% the corner placement sells him (tiny reach, it flies past).
 		var reach := 48.0
 		if ball.is_shot:
 			reach = 85.0 if ball.shot_saveable else 20.0
@@ -248,7 +264,7 @@ func _ai_try_kick() -> void:
 			ai_lift = randf_range(360.0, 430.0)
 		ball.kick(position.direction_to(aim), 430.0, ai_lift, 0.0)
 		if not skied:
-			ball.mark_shot(randf() < 0.4)
+			ball.mark_shot(randf() < 0.6)
 	else:
 		var mate := _pass_target(goal)
 		if mate and randf() < 0.85:
@@ -257,6 +273,20 @@ func _ai_try_kick() -> void:
 			# dribble: nudge the ball toward goal
 			ball.kick(position.direction_to(goal).rotated(randf_range(-0.2, 0.2)), 190.0, 0.0)
 	kick_cooldown = 0.7
+
+
+## Closest opposing outfield player (marking target for defenders).
+func _nearest_opponent() -> Node2D:
+	var best: Node2D = null
+	var best_d := INF
+	for p in main.players:
+		if p.team == team or p.is_gk:
+			continue
+		var d: float = position.distance_squared_to(p.position)
+		if d < best_d:
+			best_d = d
+			best = p
+	return best
 
 
 ## Safest short outlet for the keeper: a teammate in our own half with no

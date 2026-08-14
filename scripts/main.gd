@@ -43,6 +43,7 @@ var human_team := -1
 var streaker_done := false  # at most one pitch invasion per match
 
 var team_idx := [0, 1]  # [left/home team, right/away team] indices into TEAMS
+var possession := -1    # team currently with the ball (drives attack/defense phases)
 
 # match setup menu
 var sel_step := 0    # 0 = your team, 1 = opponent, 2 = home/away
@@ -103,6 +104,7 @@ func _ready() -> void:
 			p.base_home = entry[0] if team == TEAM_RED else Vector2(-entry[0].x, entry[0].y)
 			p.home_pos = p.base_home
 			p.is_gk = entry[1]
+			p.is_def = absf(entry[0].x) > 250.0 and not entry[1]
 			p.human_slot = entry[2]
 			players.append(p)
 			add_child(p)
@@ -316,6 +318,7 @@ func _show_message(text: String, size: int) -> void:
 # ---------- simulation (host/solo only) ----------
 
 func _physics_process(delta: float) -> void:
+	_update_possession()
 	red_chaser = _pick_chaser(TEAM_RED)
 	blue_chaser = _pick_chaser(TEAM_BLUE)
 	if playing:
@@ -329,6 +332,19 @@ func _physics_process(delta: float) -> void:
 			_spawn_streaker()
 		_check_dead_ball()
 		_check_goal()
+
+
+## Whoever is on the ball (or nearest to a loose one) has possession.
+func _update_possession() -> void:
+	if ball.holder:
+		possession = ball.holder.team
+		return
+	var best_d := 60.0
+	for p in players:
+		var d: float = p.position.distance_to(ball.position)
+		if d < best_d:
+			best_d = d
+			possession = p.team
 
 
 ## A ball that sailed over the goal and died out of play becomes a goal kick.
