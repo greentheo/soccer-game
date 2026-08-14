@@ -386,10 +386,23 @@ func _apply_sides() -> void:
 
 
 func _pick_chaser(team: int) -> Node2D:
-	# your ball: AI teammates don't contest when the human is close to it
+	# AI teammates yield the ball to the human — but only when the human is
+	# genuinely the closest option. A teammate already on the ball keeps
+	# playing it instead of abandoning it mid-dribble.
 	if team == human_team:
+		var human: Node2D = null
 		for p in players:
-			if p.team == team and p.is_human and p.position.distance_to(ball.position) < 140.0:
+			if p.team == team and p.is_human:
+				human = p
+		if human:
+			var hd: float = human.position.distance_to(ball.position)
+			var ai_nearer := false
+			for p in players:
+				if p.team == team and not p.is_human and not p.is_gk \
+						and p.position.distance_to(ball.position) < hd:
+					ai_nearer = true
+					break
+			if hd < 140.0 and not ai_nearer:
 				return null
 	var best: Node2D = null
 	var best_d := INF
