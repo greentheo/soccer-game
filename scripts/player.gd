@@ -119,8 +119,16 @@ func _release_shot(charge: float) -> void:
 	if charge > 0.85:
 		lift += 220.0  # leaned back too far — this one's going over
 	var dir := facing.rotated(clampf(randfn(0.0, 0.06), -0.22, 0.22))
-	main.ball.kick(dir, power, lift, clampf(randfn(0.0, 1.6), -2.6, 2.6))
+	main.ball.kick(dir, power, lift, _goalward_spin(dir))
 	kick_cooldown = 0.3
+
+
+## Spin that bends the ball's flight TOWARD the goal we attack — aim wide of
+## the keeper and the shot swings back in.
+func _goalward_spin(dir: Vector2) -> float:
+	var bend := dir.angle_to(main.attack_goal(team) - position)
+	var spin_dir := signf(bend) if absf(bend) > 0.05 else (1.0 if randf() < 0.5 else -1.0)
+	return spin_dir * clampf(absf(randfn(0.9, 0.5)), 0.3, 2.2)
 
 
 ## Quick dash toward facing; pokes the ball loose if we reach it.
@@ -209,7 +217,8 @@ func _ai_try_kick() -> void:
 		var ai_lift := randf_range(60.0, 140.0)
 		if randf() < 0.12:
 			ai_lift = randf_range(360.0, 430.0)
-		ball.kick(position.direction_to(aim), 430.0, ai_lift, randf_range(-1.6, 1.6))
+		var sdir := position.direction_to(aim)
+		ball.kick(sdir, 430.0, ai_lift, _goalward_spin(sdir))
 	else:
 		var mate := _pass_target(goal)
 		if mate and randf() < 0.85:
