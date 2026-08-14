@@ -27,11 +27,16 @@ var steal_cooldown := 0.0
 var charging := false     # holding Space to power up a shot
 var charge_t := 0.0
 var celebrate_t := 0.0    # post-goal celebration time remaining
+var dive_t := 0.0         # goalkeeper dive time remaining
+var dive_vel := Vector2.ZERO
 
 
 func _process(delta: float) -> void:
 	if celebrate_t > 0.0:
 		celebrate_t -= delta
+		queue_redraw()
+	if dive_t > 0.0:
+		dive_t = maxf(0.0, dive_t - delta)
 		queue_redraw()
 
 
@@ -118,12 +123,20 @@ func _release_shot(charge: float) -> void:
 	var lift := 40.0 + 200.0 * charge
 	if charge > 0.85:
 		lift += 220.0  # leaned back too far — this one's going over
-	var corner_side := signf(facing.y) if absf(facing.y) > 0.25 else (1.0 if randf() < 0.5 else -1.0)
-	var aim: Vector2 = main.attack_goal(team) + Vector2(0, corner_side * (main.GOAL_HALF - 14.0))
+	var aim: Vector2 = main.attack_goal(team) + Vector2(0, _far_corner_side() * (main.GOAL_HALF - 14.0))
 	main.ball.kick(position.direction_to(aim), power, lift, 0.0)
 	if charge <= 0.85:
-		main.ball.mark_shot(randf() < 0.25)
+		main.ball.mark_shot(randf() < 0.4)
 	kick_cooldown = 0.3
+
+
+## Corner away from wherever the opposing keeper is standing.
+func _far_corner_side() -> float:
+	for p in main.players:
+		if p.team != team and p.is_gk:
+			if absf(p.position.y) > 2.0:
+				return -signf(p.position.y)
+	return 1.0 if randf() < 0.5 else -1.0
 
 
 ## Quick dash toward facing; pokes the ball loose if we reach it.
@@ -156,6 +169,21 @@ func _ai_control(delta: float) -> void:
 	var chasing := false
 
 	if is_gk:
+		# mid-dive: committed, keep flying
+		if dive_t > 0.0:
+			velocity = dive_vel
+			_ai_try_kick()
+			return
+		# incoming shot: dive! Toward it if we read it, the wrong way if sold.
+		if ball.is_shot and ball.z < 80.0 and position.distance_to(ball.position) < 120.0:
+			var toward := signf(ball.position.y - position.y)
+			if toward == 0.0:
+				toward = 1.0
+			dive_t = 0.5
+			dive_vel = Vector2(0, toward if ball.shot_saveable else -toward) * 230.0
+			velocity = dive_vel
+			_ai_try_kick()
+			return
 		# hold the line, track the ball's y; rush out only if it's very close
 		target = Vector2(home_pos.x, clampf(ball.position.y, -main.GOAL_HALF - 15.0, main.GOAL_HALF + 15.0))
 		if position.distance_to(ball.position) < 70.0:
@@ -212,15 +240,15 @@ func _ai_try_kick() -> void:
 		return
 
 	if position.distance_to(goal) < 260.0 and randf() < 0.75:
-		# straight shot into a corner; occasionally blaze it over
-		var aim := Vector2(goal.x, (main.GOAL_HALF - 14.0) * (1.0 if randf() < 0.5 else -1.0))
+		# straight shot into the corner away from the keeper; occasionally over
+		var aim := Vector2(goal.x, (main.GOAL_HALF - 14.0) * _far_corner_side())
 		var ai_lift := randf_range(60.0, 140.0)
 		var skied := randf() < 0.12
 		if skied:
 			ai_lift = randf_range(360.0, 430.0)
 		ball.kick(position.direction_to(aim), 430.0, ai_lift, 0.0)
 		if not skied:
-			ball.mark_shot(randf() < 0.25)
+			ball.mark_shot(randf() < 0.4)
 	else:
 		var mate := _pass_target(goal)
 		if mate and randf() < 0.85:
@@ -312,8 +340,13 @@ func _draw() -> void:
 		trim = trim.darkened(0.45)
 		trim2 = trim2.darkened(0.45)
 
+	# goalkeeper dive: body tips over and lunges in the dive direction
+	if dive_t > 0.0:
+		var prog := clampf((0.5 - dive_t) * 3.5, 0.0, 1.0)
+		var dn := dive_vel.normalized()
+		draw_set_transform(dn * prog * 9.0, dn.y * prog * 1.1, Vector2.ONE)
 	# goal celebration: hop up and down with arms in the air
-	if celebrate_t > 0.0:
+	elif celebrate_t > 0.0:
 		var hop := absf(sin(celebrate_t * 9.0)) * 6.0
 		draw_set_transform(Vector2(0, -hop), 0.0, Vector2.ONE)
 		draw_circle(Vector2(-9, -22), 3.5, SKIN)
