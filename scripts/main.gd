@@ -174,7 +174,7 @@ func _to_team_select() -> void:
 	_apply_sides()
 	_update_score()
 	kickoff()
-	_show_message("CHOOSE YOUR TEAM\n\n[ ← ]  MAN UTD        MAN CITY  [ → ]", 36)
+	_show_message("CHOOSE YOUR TEAM\n\n[ LEFT ]  MAN UTD        MAN CITY  [ RIGHT ]", 36)
 
 
 func _start_match(chosen_team: int) -> void:
