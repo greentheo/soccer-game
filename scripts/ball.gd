@@ -12,6 +12,8 @@ var z := 0.0       # height above the ground
 var vz := 0.0
 var no_touch := 0.0 # brief window after a kick where dribble contact is ignored
 var spin := 0.0     # curls the ball's flight path (radians/sec)
+var is_shot := false        # a shot on goal is in flight
+var shot_saveable := false  # pre-rolled outcome: will the keeper read it?
 var holder: Node2D = null # human player carrying the ball (sticky dribble)
 var shield_grace := 0.0   # steal protection right after winning the ball
 
@@ -38,6 +40,15 @@ func kick(dir: Vector2, power: float, lift: float, spin_amt := 0.0) -> void:
 	vz = lift
 	spin = spin_amt
 	no_touch = 0.3
+	is_shot = false
+	shot_saveable = false
+
+
+## Call right after kick() for a shot on goal: pre-rolls whether the keeper
+## reads it (save) or gets sold by the corner placement (goal).
+func mark_shot(saved: bool) -> void:
+	is_shot = true
+	shot_saveable = saved
 
 
 func _physics_process(delta: float) -> void:
