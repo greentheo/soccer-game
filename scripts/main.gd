@@ -618,8 +618,15 @@ func _start_net_match() -> void:
 	playing = true
 
 
+var _dbg_sends := 0
+
+
 func _send_input() -> void:
 	var v := Input.get_vector("move_left", "move_right", "move_up", "move_down")
+	var err := ws.send_text(JSON.stringify({"t": "probe"}))
+	_dbg_sends += 1
+	if _dbg_sends % 40 == 1:
+		print("dbg send_text err=", err, " state=", ws.get_ready_state(), " sends=", _dbg_sends)
 	ws.send_text(JSON.stringify({
 		"t": "in",
 		"x": snappedf(v.x, 0.01), "y": snappedf(v.y, 0.01),
