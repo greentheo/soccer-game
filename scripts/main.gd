@@ -12,6 +12,7 @@ const TEAM_RED := 0   # left / home side
 const TEAM_BLUE := 1  # right / away side
 
 const HALF_LENGTH := 300.0  # 5 minutes per half
+const ET_LENGTH := 120.0    # 2-minute extra-time halves when it's a draw
 
 const TEAMS := [
 	{"name": "MAN UTD", "color": Color(0.85, 0.09, 0.12)},
@@ -209,7 +210,8 @@ func _process(_delta: float) -> void:
 		switch_player()
 
 	var secs := int(ceilf(time_left))
-	time_label.text = "%s HALF   %d:%02d" % ["1st" if half == 1 else "2nd", secs / 60, secs % 60]
+	var period := "1st HALF" if half == 1 else ("2nd HALF" if half == 2 else "EXTRA TIME")
+	time_label.text = "%s   %d:%02d" % [period, secs / 60, secs % 60]
 
 
 # ---------- match setup menu ----------
@@ -360,29 +362,36 @@ func _check_dead_ball() -> void:
 
 func _end_half() -> void:
 	playing = false
-	if half == 1:
+	if half % 2 == 1:
+		# break between halves (regulation or extra time)
 		_show_message("HALF TIME", 56)
 		await get_tree().create_timer(3.0).timeout
-		half = 2
-		time_left = HALF_LENGTH
+		half += 1
+		time_left = HALF_LENGTH if half <= 2 else ET_LENGTH
+		_apply_sides()
+		message_label.visible = false
+		kickoff()
+		playing = true
+	elif red_score == blue_score:
+		# level after a full period: two more 2-minute halves decide it
+		_show_message("STILL LEVEL!\nEXTRA TIME", 48)
+		await get_tree().create_timer(3.0).timeout
+		half += 1
+		time_left = ET_LENGTH
 		_apply_sides()
 		message_label.visible = false
 		kickoff()
 		playing = true
 	else:
 		match_over = true
-		var result := "DRAW"
-		if red_score > blue_score:
-			result = "%s WINS!" % team_name(TEAM_RED)
-		elif blue_score > red_score:
-			result = "%s WINS!" % team_name(TEAM_BLUE)
+		var result := "%s WINS!" % team_name(TEAM_RED if red_score > blue_score else TEAM_BLUE)
 		_show_message("FULL TIME\n%s\n(R for a rematch)" % result, 44)
 
 
-## Teams swap ends for the second half.
+## Teams swap ends each half (regulation and extra time alike).
 func _apply_sides() -> void:
 	for p in players:
-		p.home_pos = p.base_home if half == 1 else Vector2(-p.base_home.x, p.base_home.y)
+		p.home_pos = p.base_home if half % 2 == 1 else Vector2(-p.base_home.x, p.base_home.y)
 
 
 func _pick_chaser(team: int) -> Node2D:
@@ -420,9 +429,9 @@ func get_chaser(team: int) -> Node2D:
 	return red_chaser if team == TEAM_RED else blue_chaser
 
 
-## Goal position a team is attacking (ends swap at half time).
+## Goal position a team is attacking (ends swap every half).
 func attack_goal(team: int) -> Vector2:
-	var dir := 1.0 if (team == TEAM_RED) == (half == 1) else -1.0
+	var dir := 1.0 if (team == TEAM_RED) == (half % 2 == 1) else -1.0
 	return Vector2(dir * HALF_W, 0)
 
 
