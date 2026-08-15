@@ -45,6 +45,7 @@ var streaker_done := false  # at most one pitch invasion per match
 
 var team_idx := [0, 1]  # [left/home team, right/away team] indices into TEAMS
 var possession := -1    # team currently with the ball (drives attack/defense phases)
+var in_shootout := false
 
 # match setup menu
 var sel_step := 0    # 0 = your team, 1 = opponent, 2 = home/away
@@ -124,6 +125,10 @@ func _ready() -> void:
 		_start_match(TEAM_RED)
 		if args.has("--streaker"):
 			_spawn_streaker()
+		if args.has("--pens"):
+			playing = false
+			_run_shootout()
+			await get_tree().create_timer(3.0).timeout
 		await get_tree().create_timer(1.5).timeout
 		get_viewport().get_texture().get_image().save_png(args[shot_idx + 1] + ".match.png")
 		get_tree().quit()
@@ -209,9 +214,12 @@ func _process(_delta: float) -> void:
 	elif playing and Input.is_action_just_pressed("switch_player"):
 		switch_player()
 
-	var secs := int(ceilf(time_left))
-	var period := "1st HALF" if half == 1 else ("2nd HALF" if half == 2 else "EXTRA TIME")
-	time_label.text = "%s   %d:%02d" % [period, secs / 60, secs % 60]
+	if in_shootout:
+		time_label.text = "PENALTIES"
+	else:
+		var secs := int(ceilf(time_left))
+		var period := "1st HALF" if half == 1 else ("2nd HALF" if half == 2 else "EXTRA TIME")
+		time_label.text = "%s   %d:%02d" % [period, secs / 60, secs % 60]
 
 
 # ---------- match setup menu ----------
@@ -286,6 +294,7 @@ func _to_team_select() -> void:
 	playing = false
 	team_select = true
 	match_over = false
+	in_shootout = false
 	red_score = 0
 	blue_score = 0
 	half = 1
@@ -373,7 +382,11 @@ func _end_half() -> void:
 		kickoff()
 		playing = true
 	elif red_score == blue_score:
-		# level after a full period: two more 2-minute halves decide it
+		if half >= 4:
+			# still level after extra time: penalties decide it
+			_run_shootout()
+			return
+		# level at full time: two 2-minute extra-time halves first
 		_show_message("STILL LEVEL!\nEXTRA TIME", 48)
 		await get_tree().create_timer(3.0).timeout
 		half += 1
@@ -462,6 +475,111 @@ func kickoff() -> void:
 		p.position = p.home_pos
 		p.velocity = Vector2.ZERO
 		p.facing = Vector2.RIGHT if attack_goal(p.team).x > 0 else Vector2.LEFT
+
+
+func _gk_of(t: int) -> Node2D:
+	for p in players:
+		if p.team == t and p.is_gk:
+			return p
+	return null
+
+
+func _striker_of(t: int) -> Node2D:
+	for p in players:
+		if p.team == t and p.human_slot:
+			return p
+	return null
+
+
+## Best-of-5 penalty shootout (sudden death if needed). Your kicks: Up/Down
+## picks a corner, Space shoots. The keeper guesses a side — wrong guess is a
+## goal, right guess saves half the time.
+func _run_shootout() -> void:
+	in_shootout = true
+	_show_message("PENALTY SHOOTOUT!", 48)
+	var spot := Vector2(HALF_W - 95.0, 0.0)
+	await get_tree().create_timer(2.0).timeout
+	# park everyone near the centre circle
+	for p in players:
+		p.position = Vector2(-160.0 + (p.idx % 5) * 44.0, -170.0 if p.team == TEAM_RED else 170.0)
+		p.velocity = Vector2.ZERO
+	var pens := [0, 0]
+	var taken := [0, 0]
+	var kicker := TEAM_RED
+	while true:
+		if team_select:
+			return
+		var def_team := TEAM_BLUE if kicker == TEAM_RED else TEAM_RED
+		var gk = _gk_of(def_team)
+		var idle_gk = _gk_of(kicker)
+		var shooter = _striker_of(kicker)
+		gk.position = Vector2(HALF_W - 6.0, 0.0)
+		gk.velocity = Vector2.ZERO
+		gk.facing = Vector2.LEFT
+		idle_gk.position = Vector2(-200.0, 0.0)
+		shooter.position = spot + Vector2(-32.0, 0.0)
+		shooter.facing = Vector2.RIGHT
+		ball.reset(spot)
+
+		var side := 0.0
+		if kicker == human_team:
+			_show_message("YOUR PENALTY\nUP / DOWN picks a corner, then SPACE", 26)
+			while true:
+				if team_select:
+					return
+				await get_tree().process_frame
+				if Input.is_action_just_pressed("move_up"):
+					side = -1.0
+					_show_message("YOUR PENALTY\nTOP corner — SPACE to shoot", 26)
+				elif Input.is_action_just_pressed("move_down"):
+					side = 1.0
+					_show_message("YOUR PENALTY\nBOTTOM corner — SPACE to shoot", 26)
+				elif Input.is_action_just_pressed("kick"):
+					if side == 0.0:
+						side = 1.0 if randf() < 0.5 else -1.0
+					break
+		else:
+			_show_message("%s STEPS UP..." % team_name(kicker), 30)
+			await get_tree().create_timer(1.5).timeout
+			if team_select:
+				return
+			side = 1.0 if randf() < 0.5 else -1.0
+
+		# keeper picks a side; wrong guess = goal, right guess saves half of them
+		var ty := side * (GOAL_HALF - 16.0)
+		var guess := 1.0 if randf() < 0.5 else -1.0
+		var goal := guess != side or randf() < 0.5
+		ball.kick(spot.direction_to(Vector2(HALF_W + 8.0, ty)), 470.0, 80.0)
+		gk.dive_t = 0.5
+		gk.dive_vel = Vector2(0, guess * 230.0)
+		var tw := create_tween()
+		tw.tween_property(gk, "position:y", guess * 44.0, 0.3)
+		await get_tree().create_timer(0.32).timeout
+		if team_select:
+			return
+		if goal:
+			pens[kicker] += 1
+			pitch_node.cheer()
+			cheer_sfx.play()
+			shooter.celebrate_t = 1.5
+		else:
+			ball.kick(Vector2(-1.0, -side * 0.4), 240.0, 140.0)  # parried away
+		taken[kicker] += 1
+		_show_message("%s\n%s %d - %d %s" % ["GOAL!" if goal else "SAVED!",
+			team_name(TEAM_RED), pens[0], pens[1], team_name(TEAM_BLUE)], 34)
+		await get_tree().create_timer(1.8).timeout
+
+		var rem_a: int = maxi(0, 5 - int(taken[0]))
+		var rem_b: int = maxi(0, 5 - int(taken[1]))
+		if int(pens[0]) > int(pens[1]) + rem_b or int(pens[1]) > int(pens[0]) + rem_a:
+			break
+		if taken[0] == taken[1] and rem_a == 0 and pens[0] != pens[1]:
+			break
+		kicker = def_team
+	in_shootout = false
+	match_over = true
+	var w := TEAM_RED if int(pens[0]) > int(pens[1]) else TEAM_BLUE
+	_show_message("%s WINS ON PENALTIES  %d - %d\n(R for a rematch)" % [team_name(w), pens[0], pens[1]], 38)
 
 
 ## Hand control to this player (used when a teammate touches the ball).
