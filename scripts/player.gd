@@ -19,6 +19,7 @@ var is_human := false
 var human_slot := false
 var is_gk := false
 var is_def := false
+var benched := false    # practice mode: off the pitch entirely
 var home_pos := Vector2.ZERO
 var base_home := Vector2.ZERO
 var facing := Vector2.RIGHT
@@ -51,6 +52,8 @@ func _ready() -> void:
 
 
 func _physics_process(delta: float) -> void:
+	if benched:
+		return
 	kick_cooldown = maxf(0.0, kick_cooldown - delta)
 	steal_cooldown = maxf(0.0, steal_cooldown - delta)
 	if not main.playing:

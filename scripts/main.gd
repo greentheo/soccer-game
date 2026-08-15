@@ -46,6 +46,7 @@ var streaker_done := false  # at most one pitch invasion per match
 var team_idx := [0, 1]  # [left/home team, right/away team] indices into TEAMS
 var possession := -1    # team currently with the ball (drives attack/defense phases)
 var in_shootout := false
+var practice := false   # free-play training: no clock, no opposing outfielders
 
 # match setup menu
 var sel_step := 0    # 0 = your team, 1 = opponent, 2 = home/away, 3 = match type
@@ -215,7 +216,9 @@ func _process(_delta: float) -> void:
 	elif playing and Input.is_action_just_pressed("switch_player"):
 		switch_player()
 
-	if in_shootout:
+	if practice:
+		time_label.text = "PRACTICE"
+	elif in_shootout:
 		time_label.text = "PENALTIES"
 	else:
 		var secs := int(ceilf(time_left))
@@ -255,14 +258,32 @@ func _menu_input() -> void:
 				sel_step = 3
 				sel_cursor = 0
 			3:
-				if sel_cursor == 0:
-					_start_match(sel_side)
-				else:
-					_start_match(sel_side)
-					playing = false
-					_run_shootout()
+				match sel_cursor:
+					0:
+						_start_match(sel_side)
+					1:
+						_start_match(sel_side)
+						playing = false
+						_run_shootout()
+					2:
+						_start_practice(sel_side)
 				return
 		_menu_render()
+
+
+## Free-play training: just you, your teammates, and the opposing keeper.
+func _start_practice(side: int) -> void:
+	_start_match(side)
+	practice = true
+	streaker_done = true
+	for p in players:
+		if p.team != side and not p.is_gk:
+			p.benched = true
+			p.visible = false
+	_show_message("PRACTICE ARENA\nDribble around, pass with A, steal with E,\nhold Space to shoot at the far goal\nR: back to menu", 24)
+	await get_tree().create_timer(6.0).timeout
+	if practice and message_label.text.begins_with("PRACTICE ARENA"):
+		message_label.visible = false
 
 
 ## Selectable entries for the current menu step (team indices, or 0/1 for home/away).
@@ -276,7 +297,9 @@ func _menu_options() -> Array:
 				if i != sel_mine:
 					r.append(i)
 			return r
-	return [0, 1]
+		2:
+			return [0, 1]
+	return [0, 1, 2]
 
 
 func _menu_render() -> void:
@@ -300,6 +323,7 @@ func _menu_render() -> void:
 			lines.append("MATCH TYPE\n")
 			lines.append("»  FULL MATCH  «" if sel_cursor == 0 else "FULL MATCH")
 			lines.append("»  PENALTY SHOOTOUT  «" if sel_cursor == 1 else "PENALTY SHOOTOUT")
+			lines.append("»  PRACTICE ARENA  «" if sel_cursor == 2 else "PRACTICE ARENA")
 	lines.append("\nUp/Down: move    Space: confirm")
 	_show_message("\n".join(lines), 24)
 
@@ -309,6 +333,7 @@ func _to_team_select() -> void:
 	team_select = true
 	match_over = false
 	in_shootout = false
+	practice = false
 	red_score = 0
 	blue_score = 0
 	half = 1
@@ -323,8 +348,11 @@ func _to_team_select() -> void:
 
 func _start_match(side: int) -> void:
 	human_team = side
+	practice = false
 	for p in players:
 		p.is_human = p.human_slot and p.team == side
+		p.benched = false
+		p.visible = true
 		p.queue_redraw()
 	team_select = false
 	streaker_done = false
@@ -347,11 +375,12 @@ func _physics_process(delta: float) -> void:
 	red_chaser = _pick_chaser(TEAM_RED)
 	blue_chaser = _pick_chaser(TEAM_BLUE)
 	if playing:
-		time_left -= delta
-		if time_left <= 0.0:
-			time_left = 0.0
-			_end_half()
-			return
+		if not practice:
+			time_left -= delta
+			if time_left <= 0.0:
+				time_left = 0.0
+				_end_half()
+				return
 		if not streaker_done and randf() < delta / 800.0:
 			streaker_done = true
 			_spawn_streaker()
