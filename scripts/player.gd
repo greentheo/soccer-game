@@ -28,6 +28,7 @@ var steal_cooldown := 0.0
 var charging := false     # holding Space to power up a shot
 var charge_t := 0.0
 var celebrate_t := 0.0    # post-goal celebration time remaining
+var carry_t := 0.0        # keep momentum right after gaining control
 var dive_t := 0.0         # goalkeeper dive time remaining
 var dive_vel := Vector2.ZERO
 
@@ -81,9 +82,16 @@ func _human_control(delta: float) -> void:
 ## Shared human-control logic for local and remote players.
 func _apply_control(delta: float, dir: Vector2, sprint_held: bool, kick_held: bool, pass_p: bool, steal_p: bool) -> void:
 	var speed := HUMAN_SPEED * (SPRINT_MULT if sprint_held else 1.0)
-	velocity = velocity.move_toward(dir * speed, HUMAN_ACCEL * delta)
-	if dir != Vector2.ZERO:
-		facing = dir.normalized()
+	if dir == Vector2.ZERO and carry_t > 0.0:
+		# just took over this player: keep their run going until steered
+		carry_t -= delta
+		if velocity.length() > 20.0:
+			facing = velocity.normalized()
+	else:
+		carry_t = 0.0
+		velocity = velocity.move_toward(dir * speed, HUMAN_ACCEL * delta)
+		if dir != Vector2.ZERO:
+			facing = dir.normalized()
 
 	# shot charging: hold the kick button to wind up, release to shoot
 	if charging:

@@ -464,6 +464,7 @@ func transfer_control(p: Node2D) -> void:
 			q.is_human = false
 			q.queue_redraw()
 	p.is_human = true
+	p.carry_t = 0.5
 	p.queue_redraw()
 
 
@@ -485,7 +486,7 @@ func switch_player() -> void:
 	if current and best:
 		current.is_human = false
 		best.is_human = true
-		best.facing = current.facing
+		best.carry_t = 0.5
 		current.queue_redraw()
 		best.queue_redraw()
 
