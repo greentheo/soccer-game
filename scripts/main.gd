@@ -565,7 +565,9 @@ func _run_shootout() -> void:
 		ball.reset(spot)
 
 		var side := 0.0
+		var goal := false
 		if kicker == human_team:
+			# your penalty: pick a corner, AI keeper guesses
 			_show_message("YOUR PENALTY\nUP / DOWN picks a corner, then SPACE", 26)
 			while true:
 				if team_select:
@@ -581,25 +583,49 @@ func _run_shootout() -> void:
 					if side == 0.0:
 						side = 1.0 if randf() < 0.5 else -1.0
 					break
-		else:
-			_show_message("%s STEPS UP..." % team_name(kicker), 30)
-			await get_tree().create_timer(1.5).timeout
+			var guess := 1.0 if randf() < 0.5 else -1.0
+			goal = guess != side or randf() < 0.5
+			ball.kick(spot.direction_to(Vector2(HALF_W + 8.0, side * (GOAL_HALF - 16.0))), 470.0, 80.0)
+			gk.dive_t = 0.5
+			gk.dive_vel = Vector2(0, guess * 230.0)
+			var tw := create_tween()
+			tw.tween_property(gk, "position:y", guess * 44.0, 0.3)
+			await get_tree().create_timer(0.32).timeout
 			if team_select:
 				return
+		else:
+			# their penalty: YOU are the keeper. Pick a side, hit E to dive —
+			# time it with the strike. Too early and the shooter beats you.
+			_show_message("%s STEPS UP...\nUP / DOWN picks a side — E DIVES!" % team_name(kicker), 26)
 			side = 1.0 if randf() < 0.5 else -1.0
-
-		# keeper picks a side; wrong guess = goal, right guess saves half of them
-		var ty := side * (GOAL_HALF - 16.0)
-		var guess := 1.0 if randf() < 0.5 else -1.0
-		var goal := guess != side or randf() < 0.5
-		ball.kick(spot.direction_to(Vector2(HALF_W + 8.0, ty)), 470.0, 80.0)
-		gk.dive_t = 0.5
-		gk.dive_vel = Vector2(0, guess * 230.0)
-		var tw := create_tween()
-		tw.tween_property(gk, "position:y", guess * 44.0, 0.3)
-		await get_tree().create_timer(0.32).timeout
-		if team_select:
-			return
+			var kick_delay := randf_range(1.3, 2.4)
+			var t := 0.0
+			var picked := 0.0
+			var dove_at := -1.0
+			var dive_side := 0.0
+			var kicked := false
+			while t < kick_delay + 0.32:
+				if team_select:
+					return
+				await get_tree().process_frame
+				t += get_process_delta_time()
+				if Input.is_action_just_pressed("move_up"):
+					picked = -1.0
+				elif Input.is_action_just_pressed("move_down"):
+					picked = 1.0
+				elif Input.is_action_just_pressed("steal") and dove_at < 0.0:
+					dove_at = t
+					dive_side = picked if picked != 0.0 else (1.0 if randf() < 0.5 else -1.0)
+					gk.dive_t = 0.5
+					gk.dive_vel = Vector2(0, dive_side * 230.0)
+					var tw2 := create_tween()
+					tw2.tween_property(gk, "position:y", dive_side * 44.0, 0.3)
+				if not kicked and t >= kick_delay:
+					kicked = true
+					ball.kick(spot.direction_to(Vector2(HALF_W + 8.0, side * (GOAL_HALF - 16.0))), 470.0, 80.0)
+			var saved := dove_at >= 0.0 and dive_side == side \
+				and (dove_at >= kick_delay - 0.35 or randf() < 0.3)
+			goal = not saved
 		if goal:
 			pens[kicker] += 1
 			pitch_node.cheer()
