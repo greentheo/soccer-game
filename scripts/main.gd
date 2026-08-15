@@ -48,9 +48,10 @@ var possession := -1    # team currently with the ball (drives attack/defense ph
 var in_shootout := false
 
 # match setup menu
-var sel_step := 0    # 0 = your team, 1 = opponent, 2 = home/away
+var sel_step := 0    # 0 = your team, 1 = opponent, 2 = home/away, 3 = match type
 var sel_cursor := 0
 var sel_mine := 0
+var sel_side := 0    # which side the human chose (home 0 / away 1)
 
 var players: Array = []
 var ball: Node2D
@@ -247,10 +248,19 @@ func _menu_input() -> void:
 				var opp_final: int = team_idx[1]
 				if sel_cursor == 0:
 					team_idx = [sel_mine, opp_final]
-					_start_match(TEAM_RED)
+					sel_side = TEAM_RED
 				else:
 					team_idx = [opp_final, sel_mine]
-					_start_match(TEAM_BLUE)
+					sel_side = TEAM_BLUE
+				sel_step = 3
+				sel_cursor = 0
+			3:
+				if sel_cursor == 0:
+					_start_match(sel_side)
+				else:
+					_start_match(sel_side)
+					playing = false
+					_run_shootout()
 				return
 		_menu_render()
 
@@ -286,6 +296,10 @@ func _menu_render() -> void:
 			lines.append("»  HOME  «" if sel_cursor == 0 else "HOME")
 			lines.append("»  AWAY  «" if sel_cursor == 1 else "AWAY")
 			lines.append("\n(home wears home kit and defends the left goal)")
+		3:
+			lines.append("MATCH TYPE\n")
+			lines.append("»  FULL MATCH  «" if sel_cursor == 0 else "FULL MATCH")
+			lines.append("»  PENALTY SHOOTOUT  «" if sel_cursor == 1 else "PENALTY SHOOTOUT")
 	lines.append("\nUp/Down: move    Space: confirm")
 	_show_message("\n".join(lines), 24)
 
